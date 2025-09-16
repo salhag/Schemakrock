@@ -385,7 +385,7 @@ def normalize_db_times():
 
 # ---------------------- Streamlit UI ----------------------
 st.set_page_config(page_title="Timetabling Helper", page_icon="📅", layout="wide")
-st.title("📅 Timetabling Helper (SQLite)")
+st.title("📅 Timetabling Helper (by Salar Haghighatafshar)")
 
 init_db()
 
