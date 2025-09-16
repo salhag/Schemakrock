@@ -7,7 +7,7 @@
 # - Suggest free slots (no collisions across selected groups)
 #
 # Run:
-pip install streamlit pandas openpyxl
+# pip install streamlit pandas openpyxl
 #   streamlit run app.py
 #
 # CSV/Excel columns (header row required):
