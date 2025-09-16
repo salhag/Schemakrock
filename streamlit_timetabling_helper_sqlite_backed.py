@@ -34,10 +34,45 @@ DAY_MAP = {"Mon":0, "Tue":1, "Wed":2, "Thu":3, "Fri":4, "Sat":5, "Sun":6}
 INV_DAY_MAP = {v:k for k,v in DAY_MAP.items()}
 
 # ---------------------- Utilities ----------------------
-def parse_time_str(s: str) -> time:
-    s = str(s).strip()
-    hh, mm = s.split(":")
-    return time(int(hh), int(mm))
+def parse_time_str(x) -> time:
+    """Accepts '09:00', '09:00:00', '9.00', pandas.Timestamp, or Excel time fraction."""
+    import pandas as pd
+    from datetime import time, timedelta
+
+    # pandas Timestamp or datetime
+    if isinstance(x, pd.Timestamp):
+        return time(x.hour, x.minute)
+    # Excel / pandas numeric fraction of a day (e.g., 0.375 -> 09:00)
+    if isinstance(x, (int, float)) and 0 <= x < 2:  # allow 0..1 (some files have >1 by mistake)
+        total_seconds = int(round(float(x) * 24 * 3600))
+        hh = (total_seconds // 3600) % 24
+        mm = (total_seconds % 3600) // 60
+        return time(hh, mm)
+
+    s = str(x).strip()
+    # Try common string formats
+    # 1) HH:MM or HH:MM:SS
+    if ":" in s:
+        parts = s.split(":")
+        if len(parts) >= 2:
+            hh = int(parts[0])
+            mm = int(parts[1])
+            return time(hh, mm)
+    # 2) HH.MM
+    if "." in s:
+        parts = s.split(".")
+        if len(parts) >= 2 and all(p.isdigit() for p in parts[:2]):
+            hh = int(parts[0]); mm = int(parts[1])
+            return time(hh, mm)
+
+    # 3) Fallback: try pandas to_datetime (last resort)
+    try:
+        ts = pd.to_datetime(s)
+        return time(ts.hour, ts.minute)
+    except Exception:
+        pass
+
+    raise ValueError(f"Unrecognized time format: {x!r}")
 
 def time_to_str(t: time) -> str:
     return f"{t.hour:02d}:{t.minute:02d}"
@@ -105,9 +140,9 @@ def bulk_insert_events(df: pd.DataFrame):
                 (
                     str(r["course"]).strip(),
                     groups_to_str(parse_groups(r["groups"])),
-                    int(DAY_MAP.get(str(r["day"]).strip(), r["day"])) if str(r["day"]).strip() in DAY_MAP else int(r["day"]),
-                    str(r["start"]).strip(),
-                    str(r["end"]).strip(),
+                    parse_day(r["day"]),
+                    time_to_str(parse_time_str(r["start"])),  # normalize to 'HH:MM'
+                    time_to_str(parse_time_str(r["end"])),    # normalize to 'HH:MM'
                     str(r["weeks"]).strip(),
                     str(r["semester"]).strip(),
                 )
@@ -337,7 +372,7 @@ if submitted:
         gset = parse_groups(prop_groups)
         start_t = parse_time_str(prop_start)
         end_t   = parse_time_str(prop_end)
-        conflicts = check_conflict_in_db(gset, DAY_MAP[prop_day], start_t, end_t, int(prop_week), prop_sem)
+        conflicts = check_conflict_in_db(gset, parse_day(prop_day), start_t, end_t, int(prop_week), prop_sem)
         if conflicts:
             st.error(f"❌ Conflict(s) found for {prop_groups} in week {prop_week} on {prop_day}:")
             st.table(pd.DataFrame(conflicts, columns=["course","groups","start","end"]))
