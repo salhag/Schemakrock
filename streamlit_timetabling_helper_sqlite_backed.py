@@ -385,7 +385,10 @@ def normalize_db_times():
 
 # ---------------------- Streamlit UI ----------------------
 st.set_page_config(page_title="Timetabling Helper", page_icon="📅", layout="wide")
-st.title("📅 Timetabling Helper (by Salar Haghighatafshar)")
+st.title("📅 Academic Semester Scheduler")
+st.subheader("Find free slots, avoid clashes, and manage timetables with ease")
+st.caption("Developed by Salar Haghighatafshar, Kristianstad University, Sweden")
+
 
 init_db()
 
