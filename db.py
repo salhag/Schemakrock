@@ -167,7 +167,7 @@ def query_events(
 
     # UI-vänlig vy
     if not df.empty:
-        from .parsing import INT_TO_DAY  # lokal import för att undvika cykel
+        from parsing import INT_TO_DAY  # lokal import för att undvika cykel
         df["veckodag"] = df["day"].map(INT_TO_DAY)
         df = df[
             ["id", "course", "groups", "teacher", "veckodag", "start", "end", "weeks", "semester"]
