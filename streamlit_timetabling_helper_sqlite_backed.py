@@ -1,13 +1,27 @@
-# app.py — Schemaläggningshjälp (SQLite)
+# app.py — Streamlit Timetabling Helper (SQLite-backed)
 # ----------------------------------------------------
-# Funktioner
-# - Ladda upp CSV/Excel med svensk kolumnuppsättning → lagras i SQLite
-# - Visa/sök per termin & program (t.ex. MTBG, VAKT, NGMV)
-# - Robust veckodags-tolkning (svenska & engelska; mån/måndag/Mon/0–6/1–7)
-# - Robust tidsparsning ('09:00', '09:00:00', '9.00', Excel-fraktioner, Timestamp)
-# - Krockkontroll mot databasen (pass som ligger direkt efter varandra räknas inte som krock)
-# - Förslag på lediga tider (krockfri för valda program)
-# - Databashantering i appen: rensa allt / per termin / per program / per kurs; normalisera tider; ta bort valda rader
+# Features
+# - Upload CSV/Excel timetables → stored in SQLite
+# - View/search by semester & group (MTBG, VAKT, NGMV or any label)
+# - Robust weekday parsing (English & Swedish; Mon/Monday/måndag/0..6/1..7)
+# - Robust time parsing ('09:00', '09:00:00', '9.00', Excel fractions/Times)
+# - Check a proposed event for conflicts vs DB
+# - Suggest free slots (no collisions across selected groups)
+# - Manage DB in-app: erase all / by semester / by group; delete selected rows; (optional) normalize stored times
+#
+# Run:
+#   pip install streamlit pandas openpyxl
+#   streamlit run app.py
+#
+# CSV/Excel columns (header row required):
+#   course, groups, day, start, end, weeks, semester
+# Where:
+#   groups  = e.g. "MTBG" or "MTBG;NGMV" (semicolon-separated for joint sessions)
+#   day     = Mon,Tue,Wed,Thu,Fri,Sat,Sun OR full names OR Swedish OR 0..6 (Mon=0) OR 1..7 (Mon=1)
+#   start   = HH:MM (24h) (also accepts HH:MM:SS / HH.MM / Excel time)
+#   end     = HH:MM (24h)
+#   weeks   = comma-separated list/ranges (e.g., "36-38,40,42")
+#   semester= e.g., "2025-Fall" (used to isolate schedules)
 
 import sqlite3
 from contextlib import closing
@@ -20,22 +34,26 @@ import streamlit as st
 
 DB_PATH = "timetable.db"
 
-# ---------------------- Dagar/Tider ----------------------
+# ---------------------- Day/Time Parsing ----------------------
 DAY_TO_INT = {
-    # Svenska varianter
-    "mån": 0, "mandag": 0, "måndag": 0, "man": 0, "mon": 0,
-    "tis": 1, "tisdag": 1,
-    "ons": 2, "onsdag": 2,
-    "tor": 3, "tors": 3, "torsdag": 3, "thu": 3, "thur": 3, "thurs": 3,
-    "fre": 4, "fredag": 4,
-    "lor": 5, "lör": 5, "lordag": 5, "lördag": 5, "sat": 5, "saturday": 5,
-    "son": 6, "sön": 6, "sondag": 6, "söndag": 6, "sun": 6, "sunday": 6,
-    # Engelska
+    # English
     "mon": 0, "monday": 0,
     "tue": 1, "tues": 1, "tuesday": 1,
     "wed": 2, "weds": 2, "wednesday": 2,
+    "thu": 3, "thur": 3, "thurs": 3, "thursday": 3,
+    "fri": 4, "friday": 4,
+    "sat": 5, "saturday": 5,
+    "sun": 6, "sunday": 6,
+    # Swedish (common forms)
+    "mån": 0, "mondag": 0, "måndag": 0, "man": 0, "mon": 0,
+    "tis": 1, "tisdag": 1,
+    "ons": 2, "onsdag": 2,
+    "tor": 3, "tors": 3, "torsdag": 3,
+    "fre": 4, "fredag": 4,
+    "lor": 5, "lör": 5, "lordag": 5, "lördag": 5,
+    "son": 6, "sön": 6, "sondag": 6, "söndag": 6,
 }
-INT_TO_DAY = {0: "Mån", 1: "Tis", 2: "Ons", 3: "Tors", 4: "Fre", 5: "Lör", 6: "Sön"}
+INT_TO_DAY = {0: "Mon", 1: "Tue", 2: "Wed", 3: "Thu", 4: "Fri", 5: "Sat", 6: "Sun"}
 
 
 def _normalize_ascii(s: str) -> str:
@@ -46,7 +64,7 @@ def _normalize_ascii(s: str) -> str:
 
 
 def parse_day(value) -> int:
-    """Accepterar 'mån', 'måndag', 'Mon', 0..6, 1..7 → returnerar 0..6 (mån=0)."""
+    """Accepts: 'Mon', 'Monday', 'måndag', 0..6, 1..7 → returns 0..6 (Mon=0)."""
     s = str(value).strip()
     if s.isdigit():
         n = int(s)
@@ -54,19 +72,21 @@ def parse_day(value) -> int:
             return n
         if 1 <= n <= 7:
             return (n - 1) % 7
-        raise ValueError(f"Veckodagsnummer utanför intervall: {s}")
+        raise ValueError(f"Day number out of range: {s}")
     s_norm = _normalize_ascii(s).lower()
     if s_norm in DAY_TO_INT:
         return DAY_TO_INT[s_norm]
     if len(s_norm) >= 3 and s_norm[:3] in DAY_TO_INT:
         return DAY_TO_INT[s_norm[:3]]
-    raise ValueError(f"Okänd veckodag: {value}")
+    raise ValueError(f"Unrecognized day: {value}")
 
 
 def parse_time_str(x) -> time:
-    """Accepterar '09:00', '09:00:00', '9.00', pandas.Timestamp eller Excel-dagsfraktion."""
+    """Accepts '09:00', '09:00:00', '9.00', pandas.Timestamp, or Excel day-fraction."""
+    # pandas Timestamp or datetime-like
     if isinstance(x, pd.Timestamp):
         return time(x.hour, x.minute)
+    # Excel / pandas numeric fraction of a day (e.g., 0.375 -> 09:00)
     if isinstance(x, (int, float)) and 0 <= float(x) < 2:
         total_seconds = int(round(float(x) * 24 * 3600))
         hh = (total_seconds // 3600) % 24
@@ -83,23 +103,24 @@ def parse_time_str(x) -> time:
         if len(parts) >= 2 and parts[0].isdigit() and parts[1].isdigit():
             hh = int(parts[0]); mm = int(parts[1])
             return time(hh, mm)
+    # last resort: let pandas parse
     try:
         ts = pd.to_datetime(s)
         return time(ts.hour, ts.minute)
     except Exception:
         pass
-    raise ValueError(f"Okänt tidsformat: {x!r}")
+    raise ValueError(f"Unrecognized time format: {x!r}")
 
 
 def time_to_str(t: time) -> str:
     return f"{t.hour:02d}:{t.minute:02d}"
 
 
-def parse_program(s: str) -> Set[str]:
+def parse_groups(s: str) -> Set[str]:
     return {g.strip() for g in str(s).split(";") if str(g).strip()}
 
 
-def programs_to_str(gs: Iterable[str]) -> str:
+def groups_to_str(gs: Iterable[str]) -> str:
     return ";".join(sorted(set(gs)))
 
 
@@ -124,70 +145,39 @@ def weeks_to_str(weeks: Iterable[int]) -> str:
 
 
 def overlaps(a_start: time, a_end: time, b_start: time, b_end: time) -> bool:
-    """Äkta överlapp: pass som bara möts vid gränsen (t.ex. 08:00–10:00 och 10:00–12:00)
-    räknas INTE som krock. Används i både krockkontroll och förslagslogik."""
-    return (a_start < b_end) and (b_start < a_end) and not (a_end == b_start or b_end == a_start)
+    return (a_start < b_end) and (b_start < a_end)
 
-# ---------------------- Databas ----------------------
+# ---------------------- Database ----------------------
 def init_db():
     with closing(sqlite3.connect(DB_PATH)) as con, con:
         con.execute(
             """
             CREATE TABLE IF NOT EXISTS events (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                course   TEXT NOT NULL,   -- kurskod
-                groups   TEXT NOT NULL,   -- program (semikolonavgr.)
-                day      INTEGER NOT NULL, -- 0=mån .. 6=sön
-                start    TEXT NOT NULL,   -- HH:MM
-                end      TEXT NOT NULL,   -- HH:MM
-                weeks    TEXT NOT NULL,   -- veckonummer, t.ex. 36-38,40
-                semester TEXT NOT NULL    -- termin
+                course   TEXT NOT NULL,
+                groups   TEXT NOT NULL,  -- semicolon-separated
+                day      INTEGER NOT NULL, -- 0=Mon .. 6=Sun
+                start    TEXT NOT NULL, -- HH:MM
+                end      TEXT NOT NULL, -- HH:MM
+                weeks    TEXT NOT NULL, -- e.g. 36-38,40
+                semester TEXT NOT NULL
             )
             """
         )
 
-# Hjälp: acceptera både svenska & engelska kolumnnamn och mappa till DB-fält
-SWEDISH_MAP = {
-    "kurskod": "course",
-    "program": "groups",
-    "veckodag": "day",
-    "start": "start",
-    "slut": "end",
-    "veckonummer": "weeks",
-    "termin": "semester",
-}
-ENGLISH_MAP = {
-    "course": "course",
-    "groups": "groups",
-    "day": "day",
-    "start": "start",
-    "end": "end",
-    "weeks": "weeks",
-    "semester": "semester",
-}
-
-
-def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
-    colmap = {}
-    lower_cols = {c.lower(): c for c in df.columns}
-    for src, dst in {**SWEDISH_MAP, **ENGLISH_MAP}.items():
-        if src in lower_cols:
-            colmap[lower_cols[src]] = dst
-    df2 = df.rename(columns=colmap)
-    missing = [c for c in ["course","groups","day","start","end","weeks","semester"] if c not in df2.columns]
-    if missing:
-        raise ValueError("Saknade kolumner: " + ", ".join(missing))
-    return df2[["course","groups","day","start","end","weeks","semester"]]
-
 
 def bulk_insert_events(df: pd.DataFrame):
-    df_norm = normalize_columns(df)
+    required = ["course", "groups", "day", "start", "end", "weeks", "semester"]
+    for c in required:
+        if c not in df.columns:
+            raise ValueError(f"Missing required column: {c}")
+    # normalize & insert
     rows = []
-    for _, r in df_norm.iterrows():
+    for _, r in df.iterrows():
         rows.append(
             (
                 str(r["course"]).strip(),
-                programs_to_str(parse_program(r["groups"])),
+                groups_to_str(parse_groups(r["groups"])),
                 parse_day(r["day"]),
                 time_to_str(parse_time_str(r["start"])),
                 time_to_str(parse_time_str(r["end"])),
@@ -211,12 +201,6 @@ def fetch_semesters() -> List[str]:
     return [r[0] for r in rows]
 
 
-def list_courses() -> List[str]:
-    with closing(sqlite3.connect(DB_PATH)) as con:
-        rows = con.execute("SELECT DISTINCT course FROM events ORDER BY course").fetchall()
-    return [r[0] for r in rows]
-
-
 def query_events(semester: str, groups_filter: Set[str] | None = None) -> pd.DataFrame:
     with closing(sqlite3.connect(DB_PATH)) as con:
         if groups_filter:
@@ -234,18 +218,11 @@ def query_events(semester: str, groups_filter: Set[str] | None = None) -> pd.Dat
             params = [semester]
         df = pd.read_sql_query(sql, con, params=params)
     if not df.empty:
-        df["veckodag"] = df["day"].map(INT_TO_DAY)
-        df = df[["id", "course", "groups", "veckodag", "start", "end", "weeks", "semester"]]
-        df = df.rename(columns={
-            "course": "kurskod",
-            "groups": "program",
-            "end": "slut",
-            "weeks": "veckonummer",
-            "semester": "termin",
-        })
+        df["day_name"] = df["day"].map(INT_TO_DAY)
+        df = df[["id", "course", "groups", "day_name", "start", "end", "weeks", "semester"]]
     return df
 
-# ---------------------- Krock & Förslag ----------------------
+# ---------------------- Conflict & Suggestion Engine ----------------------
 @dataclass(frozen=True)
 class Event:
     course: str
@@ -265,10 +242,29 @@ class Schedule:
                 self.index.setdefault(g, {})
                 for w in ev.weeks:
                     self.index[g].setdefault(w, {}).setdefault(ev.day, []).append((ev.start, ev.end))
+        # sort intervals
         for g in self.index:
             for w in self.index[g]:
                 for d in self.index[g][w]:
                     self.index[g][w][d].sort()
+
+    def group_collisions(self, group: str) -> List[Tuple[int, int, time, time, Event, Event]]:
+        cols = []
+        for w, day_map in self.index.get(group, {}).items():
+            for d, intervals in day_map.items():
+                for i in range(len(intervals)):
+                    for j in range(i + 1, len(intervals)):
+                        s1, e1 = intervals[i]
+                        s2, e2 = intervals[j]
+                        if overlaps(s1, e1, s2, e2):
+                            ev1 = next(
+                                ev for ev in self.events if group in ev.groups and w in ev.weeks and ev.day == d and ev.start == s1 and ev.end == e1
+                            )
+                            ev2 = next(
+                                ev for ev in self.events if group in ev.groups and w in ev.weeks and ev.day == d and ev.start == s2 and ev.end == e2
+                            )
+                            cols.append((w, d, max(s1, s2), min(e1, e2), ev1, ev2))
+        return cols
 
     def find_free_slots(
         self,
@@ -325,7 +321,7 @@ def load_schedule_from_db(semester: str) -> Schedule:
         evs.append(
             Event(
                 course=str(course),
-                groups=frozenset(parse_program(g_str)),
+                groups=frozenset(parse_groups(g_str)),
                 day=int(day),
                 start=parse_time_str(s),
                 end=parse_time_str(e),
@@ -337,29 +333,22 @@ def load_schedule_from_db(semester: str) -> Schedule:
 
 def check_conflict_in_db(
     groups: Set[str], day: int, start: time, end: time, week: int, semester: str
-) -> List[Dict[str, str]]:
-    """Returnerar konflikter som dictar inkl. veckonummer och veckodag (svenska)."""
+) -> List[Tuple[str, str, str, str]]:
+    """Return list of conflicting rows: (course, groups, start, end)."""
     with closing(sqlite3.connect(DB_PATH)) as con:
         rows = con.execute(
-            "SELECT id, course, groups, start, end, weeks, day FROM events WHERE semester=? AND day=?",
+            "SELECT id, course, groups, start, end, weeks FROM events WHERE semester=? AND day=?",
             (semester, day),
         ).fetchall()
-    conflicts: List[Dict[str, str]] = []
-    for _id, course, g_str, s, e, weeks, d in rows:
-        g_set = parse_program(g_str)
+    conflicts = []
+    for _id, course, g_str, s, e, weeks in rows:
+        g_set = parse_groups(g_str)
         if groups & g_set and week in parse_weeks(weeks):
             if overlaps(parse_time_str(s), parse_time_str(e), start, end):
-                conflicts.append({
-                    "kurskod": course,
-                    "program": g_str,
-                    "veckonummer": week,
-                    "veckodag": INT_TO_DAY.get(d, str(d)),
-                    "start": s,
-                    "slut": e
-                })
+                conflicts.append((course, g_str, s, e))
     return conflicts
 
-# ---------------------- DB-hantering ----------------------
+# ---------------------- DB Management Helpers ----------------------
 
 def erase_all():
     with closing(sqlite3.connect(DB_PATH)) as con, con:
@@ -371,22 +360,9 @@ def erase_by_semester(semester: str):
         con.execute("DELETE FROM events WHERE semester=?", (semester,))
 
 
-def erase_by_program(substr: str):
+def erase_by_group(substr: str):
     with closing(sqlite3.connect(DB_PATH)) as con, con:
-        con.execute("DELETE FROM events WHERE groups LIKE ? COLLATE NOCASE", (f"%{substr}%",))
-
-
-def erase_by_course(course_name: str):
-    with closing(sqlite3.connect(DB_PATH)) as con, con:
-        con.execute("DELETE FROM events WHERE course=? COLLATE NOCASE", (course_name.strip(),))
-
-
-def list_program_tokens() -> List[str]:
-    tokens = set()
-    with closing(sqlite3.connect(DB_PATH)) as con:
-        for (gstr,) in con.execute("SELECT DISTINCT groups FROM events"):
-            tokens.update({t.strip() for t in str(gstr).split(";") if t.strip()})
-    return sorted(tokens)
+        con.execute("DELETE FROM events WHERE groups LIKE ?", (f"%{substr}%",))
 
 
 def erase_by_ids(ids: List[int]):
@@ -407,142 +383,133 @@ def normalize_db_times():
             except Exception:
                 pass
 
-# ---------------------- Streamlit UI (svenska) ----------------------
-st.set_page_config(page_title="Schemaläggningshjälp", page_icon="📅", layout="wide")
-st.title("📅 Schemaläggningshjälp (av Salar Haghighatafshar)")
-st.markdown("_Verktyg för terminsplanering med krockkontroll och förslag på lediga tider_")
+# ---------------------- Streamlit UI ----------------------
+st.set_page_config(page_title="Timetabling Helper", page_icon="📅", layout="wide")
+st.title("📅 Academic Semester Scheduler")
+st.subheader("Find free slots, avoid clashes, and manage timetables with ease")
+st.caption("Developed by Salar Haghighatafshar, Kristianstad University, Sweden")
+
 
 init_db()
 
 with st.sidebar:
-    st.header("Ladda upp schemafil")
-    st.caption("Accepterar CSV eller Excel med rubrikerna: kurskod, program, veckodag, start, slut, veckonummer, termin")
-    up = st.file_uploader("CSV eller Excel", type=["csv", "xlsx", "xls"])
-    if st.button("Importera till databas", use_container_width=True, disabled=up is None):
+    st.header("Upload timetable")
+    sem_default = "2025-Fall"
+    semester_sidebar = st.text_input("Semester label", sem_default)
+    up = st.file_uploader("CSV or Excel file", type=["csv", "xlsx", "xls"])
+    if st.button("Import to database", use_container_width=True, disabled=up is None or not semester_sidebar.strip()):
         try:
             if up.name.lower().endswith(".csv"):
                 df = pd.read_csv(up)
             else:
                 df = pd.read_excel(up)
             bulk_insert_events(df)
-            sems = ", ".join(sorted(normalize_columns(df)["semester"].astype(str).unique()))
-            st.success(f"Importerade {len(df)} rader. Termer: {sems}")
+            st.success(f"Imported {len(df)} rows. Semesters present: {', '.join(sorted(df['semester'].astype(str).unique()))}")
         except Exception as e:
             st.exception(e)
 
     st.markdown("---")
-    st.header("Hantera databas")
-    if st.button("🗑️ Rensa ALLT", use_container_width=True):
+    st.header("Manage database")
+    if st.button("🗑️ Erase ALL events", use_container_width=True):
         erase_all()
-        st.success("Databasen är tömd.")
-    sem_to_erase = st.text_input("Ta bort per termin (t.ex. 2025-HT)", "")
-    if st.button("Ta bort termin", use_container_width=True, disabled=not sem_to_erase.strip()):
+        st.success("Database cleared.")
+    sem_to_erase = st.text_input("Erase by semester", "")
+    if st.button("Erase semester", use_container_width=True, disabled=not sem_to_erase.strip()):
         erase_by_semester(sem_to_erase.strip())
-        st.success(f"Tog bort termin: {sem_to_erase}")
-    prog_list = list_program_tokens()
-    if prog_list:
-        prog_choice = st.selectbox("Ta bort per program (välj)", [""] + prog_list)
-        if st.button("Ta bort valt program", use_container_width=True, disabled=not prog_choice):
-            erase_by_program(prog_choice)
-            st.success(f"Tog bort alla pass för program: {prog_choice}")
-    course_to_erase = st.text_input("Ta bort per kurskod (skriv)", "")
-    if st.button("Ta bort kurskod", use_container_width=True, disabled=not course_to_erase.strip()):
-        erase_by_course(course_to_erase.strip())
-        st.success(f"Tog bort alla pass för kurskod: {course_to_erase}")
-    if st.button("Normalisera lagrade tider till HH:MM", use_container_width=True):
+        st.success(f"Erased semester: {sem_to_erase}")
+    grp_to_erase = st.text_input("Erase by group substring (e.g., MTBG)", "")
+    if st.button("Erase matching group", use_container_width=True, disabled=not grp_to_erase.strip()):
+        erase_by_group(grp_to_erase.strip())
+        st.success(f"Erased events where groups LIKE '%{grp_to_erase}%'")
+    if st.button("Normalize stored times to HH:MM", use_container_width=True):
         normalize_db_times()
-        st.success("Tider normaliserade.")
+        st.success("Times normalized.")
 
 st.markdown("---")
 
-# Utforskare
-st.subheader("Utforska & redigera befintligt schema")
+# Explorer
+st.subheader("Explore & Edit existing timetable")
 available_semesters = fetch_semesters()
 col1, col2 = st.columns(2)
 with col1:
-    sem_sel = st.selectbox("Termin", options=available_semesters or ["(inga data)"])
+    sem_sel = st.selectbox("Semester", options=available_semesters or ["(no data)"])
 with col2:
-    prog_text = st.text_input("Filtrera på program (separera med semikolon)", "")
-    prog_filter = {g.strip() for g in prog_text.split(";") if g.strip()} or None
+    grp_text = st.text_input("Filter by groups (semicolon-separated, optional)", "")
+    grp_filter = {g.strip() for g in grp_text.split(";") if g.strip()} or None
 
 if available_semesters:
-    df_view = query_events(sem_sel, prog_filter)
+    df_view = query_events(sem_sel, grp_filter)
     st.dataframe(df_view, use_container_width=True, hide_index=True)
-    ids_to_delete = st.multiselect("Markera rader att ta bort (ID)", options=df_view["id"].tolist())
-    if st.button("Ta bort markerade rader"):
+    ids_to_delete = st.multiselect("Select rows to delete (by ID)", options=df_view["id"].tolist())
+    if st.button("Delete selected rows"):
         erase_by_ids(ids_to_delete)
-        st.success(f"Tog bort {len(ids_to_delete)} rad(er). Ladda om tabellen ovan.")
+        st.success(f"Deleted {len(ids_to_delete)} row(s). Refresh above.")
 else:
-    st.info("Inga data ännu. Ladda upp en fil i sidofältet.")
+    st.info("No data yet. Upload a CSV/Excel in the sidebar.")
 
 st.markdown("---")
 
-# Krockkontroll & förslag
-st.subheader("Kontrollera ett föreslaget pass & få förslag")
+# Conflict check form
+st.subheader("Check a proposed event & get suggestions")
 with st.form("proposal_form"):
     c1, c2, c3 = st.columns([2, 1, 1])
     with c1:
-        prop_course = st.text_input("Kurskod", "NYTT-PASS")
-        prop_groups = st.text_input("Program (t.ex. MTBG;NGMV)", "MTBG")
+        prop_course = st.text_input("Course name", "New Session")
+        prop_groups = st.text_input("Groups (e.g., MTBG;NGMV)", "MTBG")
     with c2:
-        prop_sem = st.text_input("Termin", sem_sel if available_semesters else "2025-HT")
-        prop_day = st.selectbox("Veckodag", options=["Mån", "Tis", "Ons", "Tors", "Fre", "Lör", "Sön"], index=0)
+        prop_sem = st.text_input("Semester", sem_sel if available_semesters else "2025-Fall")
+        prop_day = st.selectbox("Day", options=["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"], index=0)
     with c3:
         prop_start = st.text_input("Start (HH:MM)", "09:00")
-        prop_end = st.text_input("Slut (HH:MM)", "11:00")
+        prop_end = st.text_input("End (HH:MM)", "11:00")
     c4, c5, c6 = st.columns([1, 1, 2])
     with c4:
-        prop_week = st.number_input("Vecka #", min_value=1, max_value=53, value=36, step=1)
+        prop_week = st.number_input("Week #", min_value=1, max_value=53, value=36, step=1)
     with c5:
-        sug_duration = st.number_input("Föreslagen längd (min)", min_value=30, max_value=300, value=90, step=15)
+        sug_duration = st.number_input("Suggest duration (min)", min_value=30, max_value=300, value=90, step=15)
     with c6:
-        sug_weeks = st.text_input("Föreslå över veckor (t.ex. 36-40,42)", "36-40")
+        sug_weeks = st.text_input("Suggest over weeks (e.g., 36-40,42)", "36-40")
     d1, d2, d3 = st.columns(3)
     with d1:
         days_allowed = st.multiselect(
-            "Tillåtna dagar (förslag)", options=["Mån", "Tis", "Ons", "Tors", "Fre", "Lör", "Sön"], default=["Mån", "Tis", "Ons", "Tors", "Fre"]
+            "Allowed days (suggest)", options=["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"], default=["Mon", "Tue", "Wed", "Thu", "Fri"]
         )
     with d2:
-        window_start = st.text_input("Dagsfönster start", "08:00")
+        window_start = st.text_input("Day window start", "08:00")
     with d3:
-        window_end = st.text_input("Dagsfönster slut", "18:00")
-    submitted = st.form_submit_button("Kontrollera & föreslå")
+        window_end = st.text_input("Day window end", "18:00")
+    submitted = st.form_submit_button("Check & Suggest")
 
 if submitted:
     try:
-        gset = parse_program(prop_groups)
+        gset = parse_groups(prop_groups)
         start_t = parse_time_str(prop_start)
         end_t = parse_time_str(prop_end)
-        # mappa UI-dag tillbaka till parsern
-        day_map_ui = {"Mån":"mån","Tis":"tis","Ons":"ons","Tors":"tors","Fre":"fre","Lör":"lör","Sön":"sön"}
-        conflicts = check_conflict_in_db(gset, parse_day(day_map_ui[prop_day]), start_t, end_t, int(prop_week), prop_sem)
+        conflicts = check_conflict_in_db(gset, parse_day(prop_day), start_t, end_t, int(prop_week), prop_sem)
         if conflicts:
-            st.error(f"❌ Krock(ar) för {prop_groups} vecka {prop_week} på {prop_day}:")
-            # Visa veckonummer + veckodag i tabellen
-            st.dataframe(pd.DataFrame(conflicts, columns=[
-                "kurskod", "program", "veckonummer", "veckodag", "start", "slut"
-            ]), use_container_width=True)
+            st.error(f"❌ Conflict(s) found for {prop_groups} in week {prop_week} on {prop_day}:")
+            st.table(pd.DataFrame(conflicts, columns=["course", "groups", "start", "end"]))
         else:
-            st.success("✅ Ingen krock – passet är ledigt.")
+            st.success("✅ No conflicts — this slot is available.")
 
-        # Förslag
-        st.markdown("**Förslag (krockfritt för valda program):**")
+        # Suggestions
+        st.markdown("**Suggestions (no collisions across selected groups):**")
         weeks_iter = parse_weeks(sug_weeks)
         sched = load_schedule_from_db(prop_sem)
         free = sched.find_free_slots(
             groups=gset,
             duration_min=int(sug_duration),
             weeks=weeks_iter,
-            days_allowed={parse_day(day_map_ui[d]) for d in days_allowed},
+            days_allowed={parse_day(d) for d in days_allowed},
             day_window=(parse_time_str(window_start), parse_time_str(window_end)),
             granularity_min=30,
         )
         if not free:
-            st.warning("Inga lediga tider hittades med valda filter.")
+            st.warning("No free slots found with the current filters.")
         else:
             out = pd.DataFrame(
                 [
-                    {"vecka": w, "dag": INT_TO_DAY[d], "start": time_to_str(s), "slut": time_to_str(e)}
+                    {"week": w, "day": INT_TO_DAY[d], "start": time_to_str(s), "end": time_to_str(e)}
                     for (w, d, s, e) in free
                 ]
             )
@@ -552,14 +519,14 @@ if submitted:
 
 st.markdown("---")
 
-# Hjälp
-with st.expander("ℹ️ Tips & anmärkningar"):
+# Footer help
+with st.expander("ℹ️ Tips & Notes"):
     st.markdown(
         """
-        - Ladda upp flera filer över tid för att bygga upp databas per **termin**.
-        - Använd **program** som MTBG, VAKT, NGMV (semikolon för gemensamma pass).
-        - Fält i Excel/CSV ska heta: **kurskod, program, veckodag, start, slut, veckonummer, termin**.
-        - "Föreslå över veckor" accepterar intervall och listor, t.ex. `36-40,42`.
-        - Lägg gärna till **lokaler/lärare** senare: utöka tabellen och indexera likt programmen.
+        - Upload multiple files over time to build up your semester database.
+        - Use **groups like MTBG, VAKT, NGMV** (semicolon for joint sessions).
+        - "Suggest over weeks" accepts ranges and lists, e.g. `36-40,42`.
+        - To extend with **rooms/teachers**, add columns to the DB and mirror the group-indexing logic per resource.
+        - Use the sidebar **Manage database** to erase everything, a semester, a group, normalize times, or delete selected rows in the table above.
         """
     )
