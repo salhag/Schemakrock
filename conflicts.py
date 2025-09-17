@@ -9,7 +9,7 @@ from typing import Dict, Iterable, List, Set, Tuple, Optional
 
 import pandas as pd
 
-from .parsing import (
+from parsing import (
     parse_day,
     parse_time_str,
     time_to_str,
@@ -18,7 +18,7 @@ from .parsing import (
     overlaps,
     INT_TO_DAY,
 )
-from .db import fetch_events_for_semester
+from db import fetch_events_for_semester
 
 
 # ---------------------- Förslaget pass → DB-krock ----------------------
