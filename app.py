@@ -20,7 +20,7 @@ from conflicts import compute_db_collisions, compute_teacher_collisions, check_c
 
 # ---------------------- Streamlit config ----------------------
 st.set_page_config(page_title="Schemaläggningshjälp", page_icon="📅", layout="wide")
-st.title("📅 Schemaplanerare")
+st.title("📅 Krockfritt")
 st.subheader("Ett verktyg för terminsplanering med kontroll av schemakrockar och förslag på lediga tider")
 st.markdown("av _Salar Haghighatafshar_, universitetslektor vid Högskolan Kristianstad")
 
