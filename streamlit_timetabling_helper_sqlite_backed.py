@@ -246,7 +246,7 @@ def query_events(semester: str, groups_filter: Set[str] | None = None) -> pd.Dat
         df = pd.read_sql_query(sql, con, params=params)
     if not df.empty:
         df["veckodag"] = df["day"].map(INT_TO_DAY)
-        df = df[["id", "course", "groups", "veckodag", "start", "end", "weeks", "semester"]]
+        df = df[["id", "course", "groups", "veckodag", "start", "slut", "weeks", "semester"]]
         df = df.rename(columns={
             "course": "kurskod",
             "groups": "program",
