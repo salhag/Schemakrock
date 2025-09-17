@@ -119,7 +119,8 @@ def time_to_str(t: time) -> str:
 
 
 def parse_program(s: str) -> Set[str]:
-    return {g.strip() for g in str(s).split(";") if str(g).strip()}
+    """Dela på semikolon och normalisera till VERSALER för robust jämförelse."""
+    return {str(g).strip().upper() for g in str(s).split(";") if str(g).strip()}
 
 
 def programs_to_str(gs: Iterable[str]) -> str:
@@ -509,9 +510,15 @@ with st.form("proposal_form"):
     c1, c2, c3 = st.columns([2, 1, 1])
     with c1:
         prop_course = st.text_input("Kurskod", "NYTT-PASS")
-        prop_groups = st.text_input("Program (t.ex. MTBG;NGMV)", "MTBG")
+        # Välj program från DB om möjligt, annars fritext
+        _prog_opts = list_program_tokens()
+        if _prog_opts:
+            prop_groups = st.multiselect("Program (välj en eller flera)", options=_prog_opts, default=_prog_opts[:1])
+        else:
+            prop_groups = st.text_input("Program (t.ex. MTBG;NGMV)", "MTBG")
     with c2:
-        prop_sem = st.text_input("Termin", sem_sel if available_semesters else "2025-HT")
+        # Använd termin från DB för att undvika stavfel/mismatch
+        prop_sem = st.selectbox("Termin", options=available_semesters or ["2025-HT"], index=0 if available_semesters else 0)
         prop_day = st.selectbox("Veckodag", options=["Mån", "Tis", "Ons", "Tors", "Fre", "Lör", "Sön"], index=0)
     with c3:
         prop_start = st.text_input("Start (HH:MM)", "09:00")
@@ -536,14 +543,20 @@ with st.form("proposal_form"):
 
 if submitted:
     try:
-        gset = parse_program(prop_groups)
+        # Stötta både multiselect (lista) och fritext
+        if isinstance(prop_groups, list):
+            gset = {str(g).strip().upper() for g in prop_groups if str(g).strip()}
+            groups_label = ";".join(sorted(gset))
+        else:
+            gset = parse_program(prop_groups)
+            groups_label = ";".join(sorted(gset))
         start_t = parse_time_str(prop_start)
         end_t = parse_time_str(prop_end)
         # mappa UI-dag tillbaka till parsern
         day_map_ui = {"Mån":"mån","Tis":"tis","Ons":"ons","Tors":"tors","Fre":"fre","Lör":"lör","Sön":"sön"}
         conflicts = check_conflict_in_db(gset, parse_day(day_map_ui[prop_day]), start_t, end_t, int(prop_week), prop_sem)
         if conflicts:
-            st.error(f"❌ Krock(ar) för {prop_groups} vecka {prop_week} på {prop_day}:")
+            st.error(f"❌ Krock(ar) för {groups_label} vecka {prop_week} på {prop_day}:")
             st.dataframe(pd.DataFrame(conflicts, columns=[
                 "kurskod", "program", "veckonummer", "veckodag", "start", "slut"
             ]), use_container_width=True)
