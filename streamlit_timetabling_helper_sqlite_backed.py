@@ -5,22 +5,9 @@
 # - Visa/sök per termin & program (t.ex. MTBG, VAKT, NGMV)
 # - Robust veckodags-tolkning (svenska & engelska; mån/måndag/Mon/0–6/1–7)
 # - Robust tidsparsning ('09:00', '09:00:00', '9.00', Excel-fraktioner, Timestamp)
-# - Krockkontroll mot databasen
+# - Krockkontroll mot databasen (pass som ligger direkt efter varandra räknas inte som krock)
 # - Förslag på lediga tider (krockfri för valda program)
 # - Databashantering i appen: rensa allt / per termin / per program / per kurs; normalisera tider; ta bort valda rader
-#
-# Kör:
-#   pip install streamlit pandas openpyxl
-#   streamlit run app.py
-#
-# Svensk kolumnuppsättning i CSV/Excel (rubrikrad krävs):
-#   kurskod, program, veckodag, start, slut, veckonummer, termin
-# Där:
-#   program     = t.ex. "MTBG" eller "MTBG;NGMV" (semikolonavgränsad för gemensamma pass)
-#   veckodag    = mån,tis,ons,tors,fre,lör,sön (även fulla namn) eller Mon..Sun, eller 0..6 (mån=0) / 1..7 (mån=1)
-#   start/slut  = HH:MM (24h) (accepterar även HH:MM:SS / HH.MM / Excel-tid)
-#   veckonummer = kommaseparerad lista/intervall (t.ex. "36-38,40,42")
-#   termin      = t.ex. "2025-HT" (används som filter)
 
 import sqlite3
 from contextlib import closing
@@ -137,7 +124,9 @@ def weeks_to_str(weeks: Iterable[int]) -> str:
 
 
 def overlaps(a_start: time, a_end: time, b_start: time, b_end: time) -> bool:
-    return (a_start < b_end) and (b_start < a_end)
+    """Äkta överlapp: pass som bara möts vid gränsen (t.ex. 08:00–10:00 och 10:00–12:00)
+    räknas INTE som krock. Används i både krockkontroll och förslagslogik."""
+    return (a_start < b_end) and (b_start < a_end) and not (a_end == b_start or b_end == a_start)
 
 # ---------------------- Databas ----------------------
 def init_db():
@@ -348,18 +337,26 @@ def load_schedule_from_db(semester: str) -> Schedule:
 
 def check_conflict_in_db(
     groups: Set[str], day: int, start: time, end: time, week: int, semester: str
-) -> List[Tuple[str, str, str, str]]:
+) -> List[Dict[str, str]]:
+    """Returnerar konflikter som dictar inkl. veckonummer och veckodag (svenska)."""
     with closing(sqlite3.connect(DB_PATH)) as con:
         rows = con.execute(
-            "SELECT id, course, groups, start, end, weeks FROM events WHERE semester=? AND day=?",
+            "SELECT id, course, groups, start, end, weeks, day FROM events WHERE semester=? AND day=?",
             (semester, day),
         ).fetchall()
-    conflicts = []
-    for _id, course, g_str, s, e, weeks in rows:
+    conflicts: List[Dict[str, str]] = []
+    for _id, course, g_str, s, e, weeks, d in rows:
         g_set = parse_program(g_str)
         if groups & g_set and week in parse_weeks(weeks):
             if overlaps(parse_time_str(s), parse_time_str(e), start, end):
-                conflicts.append((course, g_str, s, e))
+                conflicts.append({
+                    "kurskod": course,
+                    "program": g_str,
+                    "veckonummer": week,
+                    "veckodag": INT_TO_DAY.get(d, str(d)),
+                    "start": s,
+                    "slut": e
+                })
     return conflicts
 
 # ---------------------- DB-hantering ----------------------
@@ -368,17 +365,21 @@ def erase_all():
     with closing(sqlite3.connect(DB_PATH)) as con, con:
         con.execute("DELETE FROM events")
 
+
 def erase_by_semester(semester: str):
     with closing(sqlite3.connect(DB_PATH)) as con, con:
         con.execute("DELETE FROM events WHERE semester=?", (semester,))
+
 
 def erase_by_program(substr: str):
     with closing(sqlite3.connect(DB_PATH)) as con, con:
         con.execute("DELETE FROM events WHERE groups LIKE ? COLLATE NOCASE", (f"%{substr}%",))
 
+
 def erase_by_course(course_name: str):
     with closing(sqlite3.connect(DB_PATH)) as con, con:
         con.execute("DELETE FROM events WHERE course=? COLLATE NOCASE", (course_name.strip(),))
+
 
 def list_program_tokens() -> List[str]:
     tokens = set()
@@ -387,11 +388,13 @@ def list_program_tokens() -> List[str]:
             tokens.update({t.strip() for t in str(gstr).split(";") if t.strip()})
     return sorted(tokens)
 
+
 def erase_by_ids(ids: List[int]):
     if not ids:
         return
     with closing(sqlite3.connect(DB_PATH)) as con, con:
         con.executemany("DELETE FROM events WHERE id=?", [(int(i),) for i in ids])
+
 
 def normalize_db_times():
     with closing(sqlite3.connect(DB_PATH)) as con, con:
@@ -515,7 +518,10 @@ if submitted:
         conflicts = check_conflict_in_db(gset, parse_day(day_map_ui[prop_day]), start_t, end_t, int(prop_week), prop_sem)
         if conflicts:
             st.error(f"❌ Krock(ar) för {prop_groups} vecka {prop_week} på {prop_day}:")
-            st.table(pd.DataFrame(conflicts, columns=["kurskod", "program", "start", "slut"]))
+            # Visa veckonummer + veckodag i tabellen
+            st.dataframe(pd.DataFrame(conflicts, columns=[
+                "kurskod", "program", "veckonummer", "veckodag", "start", "slut"
+            ]), use_container_width=True)
         else:
             st.success("✅ Ingen krock – passet är ledigt.")
 
