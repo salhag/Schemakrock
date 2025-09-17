@@ -504,6 +504,91 @@ else:
 
 st.markdown("---")
 
+# 📊 Krockrapport i databasen (alla rader mot varandra)
+
+def compute_db_collisions(semester: str, programs_filter: Set[str] | None = None) -> pd.DataFrame:
+    """Beräknar krockar mellan ALLA inlagda rader i DB för vald termin,
+    valfritt filtrerat på program (semikolonavgränsad mängd). Returnerar DataFrame."""
+    with closing(sqlite3.connect(DB_PATH)) as con:
+        rows = con.execute(
+            "SELECT course, groups, day, start, end, weeks, semester FROM events WHERE semester=?",
+            (semester,)
+        ).fetchall()
+
+    # Expandera per program & vecka
+    exp_rows = []
+    for course, g_str, d, s, e, weeks, sem in rows:
+        gset = parse_program(g_str)
+        if programs_filter and not (gset & programs_filter):
+            continue
+        for w in sorted(parse_weeks(weeks)):
+            for g in sorted(gset):
+                exp_rows.append({
+                    "termin": sem,
+                    "veckonummer": w,
+                    "dag_num": int(d),
+                    "veckodag": INT_TO_DAY.get(int(d), str(d)),
+                    "program": g,
+                    "kurskod": str(course),
+                    "start": time_to_str(parse_time_str(s)),
+                    "slut": time_to_str(parse_time_str(e)),
+                })
+    exp_df = pd.DataFrame(exp_rows)
+    if exp_df.empty:
+        return pd.DataFrame()
+
+    # Krockdetektion (strikt) inom varje (termin, program, vecka, dag)
+    collisions = []
+    for (term, prog, week, day), grp in exp_df.groupby(["termin","program","veckonummer","dag_num"]):
+        rows = [(r.kurskod, parse_time_str(r.start), parse_time_str(r.slut)) for _, r in grp.iterrows()]
+        rows.sort(key=lambda x: x[1])
+        for i in range(len(rows)):
+            c1,s1,e1 = rows[i]
+            for j in range(i+1, len(rows)):
+                c2,s2,e2 = rows[j]
+                if s2 >= e1:
+                    break
+                if overlaps(s1,e1,s2,e2):
+                    collisions.append({
+                        "termin": term,
+                        "program": prog,
+                        "veckonummer": week,
+                        "veckodag": INT_TO_DAY.get(day, str(day)),
+                        "kurskod_1": c1, "start_1": time_to_str(s1), "slut_1": time_to_str(e1),
+                        "kurskod_2": c2, "start_2": time_to_str(s2), "slut_2": time_to_str(e2),
+                    })
+    return pd.DataFrame(collisions).sort_values([
+        "termin","program","veckonummer","veckodag","start_1","start_2"
+    ]).reset_index(drop=True)
+
+st.subheader("Krockrapport – alla schemarader i databasen")
+colk1, colk2, colk3 = st.columns([2,2,1])
+with colk1:
+    rep_sem = st.selectbox("Termin (rapport)", options=available_semesters or ["(inga data)"]) 
+with colk2:
+    rep_prog_text = st.text_input("Filtrera på program (semikolon, tomt = alla)", "")
+with colk3:
+    run_report = st.button("Visa krockar")
+
+if run_report and available_semesters:
+    rep_filter = {g.strip().upper() for g in rep_prog_text.split(";") if g.strip()} or None
+    rep_df = compute_db_collisions(rep_sem, rep_filter)
+    if rep_df.empty:
+        st.info("Inga krockar hittades för vald termin/filtrering.")
+    else:
+        st.dataframe(rep_df, use_container_width=True)
+        # Summering per program + veckonummer
+        with st.expander("Summering per program och veckonummer"):
+            summary = (rep_df.groupby(["program","veckonummer"]).size()
+                       .reset_index(name="antal_krockar")
+                       .sort_values(["program","veckonummer"]))
+            st.dataframe(summary, use_container_width=True)
+        # Exportknapp
+        csv_bytes = rep_df.to_csv(index=False).encode("utf-8")
+        st.download_button("Ladda ner krockrapport (CSV)", data=csv_bytes, file_name="krockrapport.csv", mime="text/csv")
+
+st.markdown("---")
+
 # Krockkontroll & förslag
 st.subheader("Kontrollera ett föreslaget pass & få förslag")
 with st.form("proposal_form"):
