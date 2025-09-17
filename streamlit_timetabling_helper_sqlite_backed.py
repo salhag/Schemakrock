@@ -506,7 +506,7 @@ st.markdown("---")
 
 # 📊 Krockrapport i databasen (alla rader mot varandra)
 
-def compute_db_collisions(semester: str, programs_filter: Set[str] | None = None) -> pd.DataFrame:
+def compute_db_collisions(semester: str, programs_filter: Set[str] | None = None, days_filter: Set[int] | None = None) -> pd.DataFrame:
     """Beräknar krockar mellan ALLA inlagda rader i DB för vald termin,
     valfritt filtrerat på program (semikolonavgränsad mängd). Returnerar DataFrame."""
     with closing(sqlite3.connect(DB_PATH)) as con:
@@ -523,11 +523,14 @@ def compute_db_collisions(semester: str, programs_filter: Set[str] | None = None
             continue
         for w in sorted(parse_weeks(weeks)):
             for g in sorted(gset):
+                d_int = int(d)
+                if days_filter is not None and d_int not in days_filter:
+                    continue
                 exp_rows.append({
                     "termin": sem,
                     "veckonummer": w,
-                    "dag_num": int(d),
-                    "veckodag": INT_TO_DAY.get(int(d), str(d)),
+                    "dag_num": d_int,
+                    "veckodag": INT_TO_DAY.get(d_int, str(d_int)),
                     "program": g,
                     "kurskod": str(course),
                     "start": time_to_str(parse_time_str(s)),
@@ -568,11 +571,14 @@ with colk1:
 with colk2:
     rep_prog_text = st.text_input("Filtrera på program (semikolon, tomt = alla)", "")
 with colk3:
-    run_report = st.button("Visa krockar")
+    rep_days = st.multiselect("Veckodagar", options=["Mån","Tis","Ons","Tors","Fre","Lör","Sön"], default=["Mån","Tis","Ons","Tors","Fre","Lör","Sön"])
+run_report = st.button("Visa krockar")
 
 if run_report and available_semesters:
     rep_filter = {g.strip().upper() for g in rep_prog_text.split(";") if g.strip()} or None
-    rep_df = compute_db_collisions(rep_sem, rep_filter)
+    day_map_ui = {"Mån":0,"Tis":1,"Ons":2,"Tors":3,"Fre":4,"Lör":5,"Sön":6}
+    rep_days_set = {day_map_ui[d] for d in rep_days} if rep_days else None
+    rep_df = compute_db_collisions(rep_sem, rep_filter, rep_days_set)
     if rep_df.empty:
         st.info("Inga krockar hittades för vald termin/filtrering.")
     else:
