@@ -30,7 +30,7 @@ def check_conflict_in_db(
     start: time,
     end: time,
     week: int,
-    teachers: Optional[Set[str]] = None,
+    teachers: Optional[Set[str]] = None,   # ✅ korrekt typhint
 ) -> List[Dict[str, str]]:
     """
     Kollar om ett föreslaget pass krockar med DB för vald termin och veckodag.
@@ -72,9 +72,9 @@ def check_conflict_in_db(
 
 def compute_db_collisions(
     semester: str,
-    programs_filter: Optional:Set[str] = None,
-    days_filter: Optional[Set[int]] = None,
-    teacher_filter: Optional[Set[str]] = None,
+    programs_filter: Optional[Set[str]] = None,  # ✅
+    days_filter: Optional[Set[int]] = None,      # ✅
+    teacher_filter: Optional[Set[str]] = None,   # ✅
 ) -> pd.DataFrame:
     """
     Bygger full krockrapport genom att:
@@ -155,8 +155,8 @@ def compute_db_collisions(
 
 def compute_teacher_collisions(
     semester: str,
-    days_filter: Optional[Set[int]] = None,
-    teachers_filter: Optional[Set[str]] = None,
+    days_filter: Optional[Set[int]] = None,      # ✅
+    teachers_filter: Optional[Set[str]] = None,  # ✅
 ) -> pd.DataFrame:
     """
     Bygger lärarrapport genom att:
