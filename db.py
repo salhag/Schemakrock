@@ -12,7 +12,7 @@ from typing import Iterable, List, Set, Tuple, Dict, Any, Optional
 
 import pandas as pd
 
-from .parsing import (
+from parsing import (
     parse_day,
     parse_time_str,
     time_to_str,
