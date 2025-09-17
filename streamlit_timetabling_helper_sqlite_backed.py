@@ -4,7 +4,7 @@
 # - Ladda upp CSV/Excel med svensk kolumnuppsättning → lagras i SQLite
 # - Visa/sök per termin & program (t.ex. MTBG, VAKT, NGMV)
 # - Robust veckodags-tolkning (svenska & engelska; mån/måndag/Mon/0–6/1–7)
-# - Robust tidsparsning ('09:00', '09:00:00', '9.00', Excel-fraktioner, Timestamp)
+# - Robust tidsparsning ('09:00', '09:00:00', '9.00', '9', Excel-fraktioner, Timestamp)
 # - Krockkontroll mot databasen (pass som ligger direkt efter varandra räknas inte som krock)
 # - Förslag på lediga tider (krockfri för valda program)
 # - Databashantering i appen: rensa allt / per termin / per program / per kurs; normalisera tider; ta bort valda rader
@@ -64,25 +64,48 @@ def parse_day(value) -> int:
 
 
 def parse_time_str(x) -> time:
-    """Accepterar '09:00', '09:00:00', '9.00', pandas.Timestamp eller Excel-dagsfraktion."""
+    """Accepterar '09:00', '09:00:00', '9.00', '9', 9 (timme), pandas.Timestamp,
+    Excel-dagsfraktion (0..1), eller numerisk timme/minut (t.ex. 13.5)."""
+    # 1) pandas Timestamp
     if isinstance(x, pd.Timestamp):
         return time(x.hour, x.minute)
-    if isinstance(x, (int, float)) and 0 <= float(x) < 2:
-        total_seconds = int(round(float(x) * 24 * 3600))
-        hh = (total_seconds // 3600) % 24
-        mm = (total_seconds % 3600) // 60
-        return time(hh, mm)
+    # 2) Numeriskt
+    if isinstance(x, (int, float)):
+        xf = float(x)
+        # 0..2: sannolikt Excel-fraktion av dygn
+        if 0 <= xf < 2:
+            total_seconds = int(round(xf * 24 * 3600))
+            hh = (total_seconds // 3600) % 24
+            mm = (total_seconds % 3600) // 60
+            return time(hh, mm)
+        # 2..24: tolka som timme (ev. decimaler = minuter)
+        if 0 <= xf < 24:
+            hh = int(xf)
+            mm = int(round((xf - hh) * 60))
+            if mm == 60:
+                hh = (hh + 1) % 24
+                mm = 0
+            return time(hh, mm)
+    # 3) Strängar
     s = str(x).strip()
+    # rena heltal: "9" → 09:00
+    if s.isdigit():
+        hh = int(s)
+        if 0 <= hh < 24:
+            return time(hh, 0)
+    # HH:MM eller HH:MM:SS
     if ":" in s:
         parts = s.split(":")
         if len(parts) >= 2:
             hh = int(parts[0]); mm = int(parts[1])
             return time(hh, mm)
+    # HH.MM
     if "." in s:
         parts = s.split(".")
         if len(parts) >= 2 and parts[0].isdigit() and parts[1].isdigit():
             hh = int(parts[0]); mm = int(parts[1])
             return time(hh, mm)
+    # sista utväg: låt pandas tolka
     try:
         ts = pd.to_datetime(s)
         return time(ts.hour, ts.minute)
@@ -104,18 +127,21 @@ def programs_to_str(gs: Iterable[str]) -> str:
 
 
 def parse_weeks(s: str) -> Set[int]:
+    """Tål format som '36-38, 40', 'v36–38', 'vecka 36', 'W36'."""
+    import re
+    text = str(s).lower().replace("\u2013", "-")
+    # ta bort ord som kan förekomma
+    text = text.replace("vecka", "").replace("veckor", "").replace("v.", "v").replace("w", "").replace(" ", "")
     weeks: Set[int] = set()
-    for part in str(s).replace("\u2013", "-").split(","):
-        seg = part.strip()
-        if not seg:
-            continue
-        if "-" in seg:
-            a, b = seg.split("-")
-            a, b = int(a), int(b)
-            lo, hi = (a, b) if a <= b else (b, a)
-            weeks.update(range(lo, hi + 1))
-        else:
-            weeks.add(int(seg))
+    # hitta intervall först, t.ex. 36-38
+    for a,b in re.findall(r"(\d{1,2})\s*-\s*(\d{1,2})", text):
+        a,b = int(a), int(b)
+        lo,hi = (a,b) if a<=b else (b,a)
+        weeks.update(range(lo, hi+1))
+    # ta bort intervalldelar så att ensamma tal inte dubblas
+    text_no_ranges = re.sub(r"\d{1,2}\s*-\s*\d{1,2}", ",", text)
+    for num in re.findall(r"\d{1,2}", text_no_ranges):
+        weeks.add(int(num))
     return weeks
 
 
@@ -354,8 +380,8 @@ def check_conflict_in_db(
                     "program": g_str,
                     "veckonummer": week,
                     "veckodag": INT_TO_DAY.get(d, str(d)),
-                    "start": s,
-                    "slut": e
+                    "start": time_to_str(parse_time_str(s)),
+                    "slut": time_to_str(parse_time_str(e)),
                 })
     return conflicts
 
@@ -518,7 +544,6 @@ if submitted:
         conflicts = check_conflict_in_db(gset, parse_day(day_map_ui[prop_day]), start_t, end_t, int(prop_week), prop_sem)
         if conflicts:
             st.error(f"❌ Krock(ar) för {prop_groups} vecka {prop_week} på {prop_day}:")
-            # Visa veckonummer + veckodag i tabellen
             st.dataframe(pd.DataFrame(conflicts, columns=[
                 "kurskod", "program", "veckonummer", "veckodag", "start", "slut"
             ]), use_container_width=True)
