@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import time, timedelta, datetime, date
 from typing import Iterable, List, Set, Tuple, Dict, FrozenSet
 
-from .parsing import (
+from parsing import (
     parse_program,
     parse_weeks,
     parse_time_str,
