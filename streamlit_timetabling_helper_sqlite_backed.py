@@ -437,7 +437,7 @@ def normalize_db_times():
 # ---------------------- Streamlit UI (svenska) ----------------------
 st.set_page_config(page_title="Schemaläggningshjälp", page_icon="📅", layout="wide")
 st.title("📅 Schemaplanerare")
-st.subheader("Verktyg för terminsplanering med krockkontroll och förslag på lediga tider")
+st.subheader("Ett verktyg för terminsplanering med kontroll av schemakrockar och förslag på lediga tider")
 st.markdown("av _Salar Haghighatafshar_, universitetslektor vid Högskolan Kristianstad")
 
 init_db()
