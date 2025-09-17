@@ -629,7 +629,7 @@ with st.form("proposal_form"):
     with d2:
         window_start = st.text_input("Dagsfönster start", "08:00")
     with d3:
-        window_end = st.text_input("Dagsfönster slut", "18:00")
+        window_end = st.text_input("Dagsfönster slut", "17:00")
     submitted = st.form_submit_button("Kontrollera & föreslå")
 
 if submitted:
