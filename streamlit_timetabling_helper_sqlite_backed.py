@@ -436,9 +436,8 @@ def normalize_db_times():
 
 # ---------------------- Streamlit UI (svenska) ----------------------
 st.set_page_config(page_title="Schemaläggningshjälp", page_icon="📅", layout="wide")
-st.title("📅 Schemaplanerare")
-st.subheader("Ett verktyg för terminsplanering med kontroll av schemakrockar och förslag på lediga tider")
-st.markdown("av _Salar Haghighatafshar_, universitetslektor vid Högskolan Kristianstad")
+st.title("📅 Schemaläggningshjälp (av Salar Haghighatafshar)")
+st.markdown("_Verktyg för terminsplanering med krockkontroll och förslag på lediga tider_")
 
 init_db()
 
@@ -611,10 +610,14 @@ with st.form("proposal_form"):
     with c2:
         # Använd termin från DB för att undvika stavfel/mismatch
         prop_sem = st.selectbox("Termin", options=available_semesters or ["2025-HT"], index=0 if available_semesters else 0)
-        prop_day = st.selectbox("Veckodag", options=["Mån", "Tis", "Ons", "Tors", "Fre", "Lör", "Sön"], index=0)
+        prop_days = st.multiselect(
+            "Veckodagar (krockkontroll)",
+            options=["Mån", "Tis", "Ons", "Tors", "Fre", "Lör", "Sön"],
+            default=["Mån", "Tis", "Ons", "Tors", "Fre"]
+        )
     with c3:
-        prop_start = st.text_input("Start (HH:MM)", "08:00")
-        prop_end = st.text_input("Slut (HH:MM)", "17:00")
+        prop_start = st.text_input("Start (HH:MM)", "09:00")
+        prop_end = st.text_input("Slut (HH:MM)", "11:00")
     c4, c5, c6 = st.columns([1, 1, 2])
     with c4:
         prop_week = st.number_input("Vecka #", min_value=1, max_value=53, value=36, step=1)
@@ -630,7 +633,7 @@ with st.form("proposal_form"):
     with d2:
         window_start = st.text_input("Dagsfönster start", "08:00")
     with d3:
-        window_end = st.text_input("Dagsfönster slut", "17:00")
+        window_end = st.text_input("Dagsfönster slut", "18:00")
     submitted = st.form_submit_button("Kontrollera & föreslå")
 
 if submitted:
@@ -646,14 +649,18 @@ if submitted:
         end_t = parse_time_str(prop_end)
         # mappa UI-dag tillbaka till parsern
         day_map_ui = {"Mån":"mån","Tis":"tis","Ons":"ons","Tors":"tors","Fre":"fre","Lör":"lör","Sön":"sön"}
-        conflicts = check_conflict_in_db(gset, parse_day(day_map_ui[prop_day]), start_t, end_t, int(prop_week), prop_sem)
-        if conflicts:
-            st.error(f"❌ Krock(ar) för {groups_label} vecka {prop_week} på {prop_day}:")
-            st.dataframe(pd.DataFrame(conflicts, columns=[
+        all_conflicts = []
+        for _d in (prop_days or []):
+            d_idx = parse_day(day_map_ui[_d])
+            all_conflicts.extend(check_conflict_in_db(gset, d_idx, start_t, end_t, int(prop_week), prop_sem))
+        if all_conflicts:
+            days_label = ", ".join(prop_days) if prop_days else "(inga dagar valda)"
+            st.error(f"❌ Krock(ar) för {groups_label} vecka {prop_week} på: {days_label}")
+            st.dataframe(pd.DataFrame(all_conflicts, columns=[
                 "kurskod", "program", "veckonummer", "veckodag", "start", "slut"
             ]), use_container_width=True)
         else:
-            st.success("✅ Ingen krock – passet är ledigt.")
+            st.success("✅ Ingen krock – passet är ledigt för valda veckodagar.")
 
         # Förslag
         st.markdown("**Förslag (krockfritt för valda program):**")
