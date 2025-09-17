@@ -164,21 +164,57 @@ with st.form("proposal_form"):
 if submitted:
     try:
         from parsing import parse_program
-        gset = {str(g).strip().upper() for g in prop_groups} if isinstance(prop_groups, list) else parse_program(prop_groups)
-        start_t, end_t = parse_time_str(prop_start), parse_time_str(prop_end)
-        day_map_ui = {"Mån":"mån","Tis":"tis","Ons":"ons","Tors":"tors","Fre":"fre","Lör":"lör","Sön":"sön"}
+
+        # Normalisera programval
+        if isinstance(prop_groups, list):
+            gset = {str(g).strip().upper() for g in prop_groups if str(g).strip()}
+        else:
+            gset = parse_program(prop_groups)
+
+        start_t = parse_time_str(prop_start)
+        end_t = parse_time_str(prop_end)
+        day_map_ui = {"Mån": "mån", "Tis": "tis", "Ons": "ons", "Tors": "tors", "Fre": "fre", "Lör": "lör", "Sön": "sön"}
         tset = {s.strip().upper() for s in prop_teachers.split(";") if s.strip()}
+
+        # Krockkontroll för alla valda dagar
         all_conflicts = []
         for _d in prop_days:
             d_idx = parse_day(day_map_ui[_d])
-            all_conflicts.extend(check_conflict_in_db(prop_sem, gset, d_idx, start_t, end_t, int(prop_week), tset))
+            all_conflicts.extend(
+                check_conflict_in_db(
+                    semester=prop_sem,
+                    groups=gset,
+                    day=d_idx,
+                    start=start_t,
+                    end=end_t,
+                    week=int(prop_week),
+                    teachers=tset if tset else None,
+                )
+            )
+
         if all_conflicts:
+            st.error("❌ Krockar hittades")
             st.dataframe(pd.DataFrame(all_conflicts), use_container_width=True)
         else:
             st.success("✅ Ingen krock.")
-        # Förslag (program-baserat)
-        sched = Schedule(events_from_db_rows(fetch_events_for_semester(prop_sem)))
-        free = sched.find_free_slots(gset, 90, parse_weeks("36-40"), {0,1,2,3,4}, (parse_time_str("08:00"), parse_time_str("18:00")))
-        st.dataframe(pd.DataFrame(free), use_container_width=True)
+
+        # Förslag på lediga tider (program-baserat)
+        rows = fetch_events_for_semester(prop_sem)
+        sched = Schedule(events_from_db_rows(rows))
+        free = sched.find_free_slots(
+            groups=gset,
+            duration_min=90,
+            weeks=parse_weeks("36-40"),
+            days_allowed={0, 1, 2, 3, 4},
+            day_window=(parse_time_str("08:00"), parse_time_str("18:00")),
+        )
+        if free:
+            out = pd.DataFrame(
+                [{"vecka": w, "dag": INT_TO_DAY[d], "start": time_to_str(s), "slut": time_to_str(e)} for (w, d, s, e) in free]
+            )
+            st.dataframe(out, use_container_width=True)
+        else:
+            st.info("Inga lediga luckor hittades.")
+
     except Exception as e:
         st.exception(e)
