@@ -612,8 +612,8 @@ with st.form("proposal_form"):
         prop_sem = st.selectbox("Termin", options=available_semesters or ["2025-HT"], index=0 if available_semesters else 0)
         prop_day = st.selectbox("Veckodag", options=["Mån", "Tis", "Ons", "Tors", "Fre", "Lör", "Sön"], index=0)
     with c3:
-        prop_start = st.text_input("Start (HH:MM)", "09:00")
-        prop_end = st.text_input("Slut (HH:MM)", "11:00")
+        prop_start = st.text_input("Start (HH:MM)", "08:00")
+        prop_end = st.text_input("Slut (HH:MM)", "17:00")
     c4, c5, c6 = st.columns([1, 1, 2])
     with c4:
         prop_week = st.number_input("Vecka #", min_value=1, max_value=53, value=36, step=1)
