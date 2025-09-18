@@ -108,7 +108,7 @@ with colk3:
 with colk4:
     rep_teacher_text = st.text_input("Lärare (semikolon, tomt = alla)", "", key="rep_teacher_text")
 
-if st.button("Visa krockar (program)", key="btn_report_program") and available_semesters:
+if st.button("Visa programkrockar", key="btn_report_program") and available_semesters:
     rep_filter = {g.strip().upper() for g in rep_prog_text.split(";") if g.strip()} or None
     day_map_ui = {"Mån":0,"Tis":1,"Ons":2,"Tors":3,"Fre":4,"Lör":5,"Sön":6}
     rep_days_set = {day_map_ui[d] for d in rep_days} if rep_days else None
