@@ -261,6 +261,6 @@ with st.expander("ℹ️ Tips & anmärkningar"):
         - Fält i Excel/CSV ska heta: **kurskod, program, veckodag, start, slut, veckonummer, termin**, (valfritt) **lärare**.
         - "Föreslå över veckor" accepterar intervall och listor, t.ex. `36-40,42`.
         - Pass som möts exakt i gränsen (t.ex. 10:00–12:00 och 12:00–14:00) räknas **inte** som krock.
-        - Lägg gärna till **lokaler** senare: utöka tabellen och indexera likt program/lärare.
+        - Vi kan lägga till **lokaler** senare: utöka tabellen och indexera likt program/lärare.
         """
     )
