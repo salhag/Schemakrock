@@ -16,28 +16,6 @@ from db import (
 )
 from models import events_from_db_rows, Schedule
 from conflicts import compute_db_collisions, compute_teacher_collisions, check_conflict_in_db
-st.markdown(
-    """
-    <style>
-    /* Gör alla knappar gröna med vit text */
-    div.stButton > button:first-child {
-        background-color: #4CAF50;
-        color: white;
-        font-weight: bold;
-        border-radius: 8px;
-        border: none;
-    }
-
-    /* Ändra färg vid hover */
-    div.stButton > button:hover {
-        background-color: #45a049;
-        color: white;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True
-)
-
 
 
 # ---------------------- Streamlit config ----------------------
