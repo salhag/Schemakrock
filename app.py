@@ -20,6 +20,28 @@ from conflicts import compute_db_collisions, compute_teacher_collisions, check_c
 
 # ---------------------- Streamlit config ----------------------
 st.set_page_config(page_title="Schemaläggningshjälp", page_icon="📅", layout="wide")
+st.markdown(
+    """
+    <style>
+    /* Gör alla knappar gröna med vit text */
+    div.stButton > button:first-child {
+        background-color: #4CAF50;
+        color: white;
+        font-weight: bold;
+        border-radius: 8px;
+        border: none;
+    }
+
+    /* Ändra färg vid hover */
+    div.stButton > button:hover {
+        background-color: #45a049;
+        color: white;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
 st.title("📅 Krockfritt")
 st.subheader("Ett verktyg för terminsplanering med kontroll av schemakrockar och förslag på lediga tider")
 st.markdown("av _Salar Haghighatafshar_, universitetslektor vid Högskolan Kristianstad")
