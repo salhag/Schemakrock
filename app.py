@@ -167,7 +167,7 @@ st.subheader("Kontrollera ett föreslaget pass & få förslag")
 with st.form("proposal_form"):
     c1, c2, c3 = st.columns([2,1,1])
     with c1:
-        prop_course = st.text_input("Kurskod", "NYTT-PASS", key="prop_course")
+        prop_course = st.text_input("Kurskod", "NYTT PASS", key="prop_course")
         _prog_opts = list_program_tokens()
         if _prog_opts:
             prop_groups = st.multiselect("Program", options=_prog_opts, default=_prog_opts[:1], key="prop_groups")
@@ -178,8 +178,8 @@ with st.form("proposal_form"):
         prop_days = st.multiselect("Veckodagar (kontroll)", options=["Mån","Tis","Ons","Tors","Fre","Lör","Sön"],
                                    default=["Mån","Tis","Ons","Tors","Fre"], key="prop_days")
     with c3:
-        prop_start = st.text_input("Start", "08:00", key="prop_start")
-        prop_end = st.text_input("Slut", "17:00", key="prop_end")
+        prop_start = st.text_input("Start", "10:00", key="prop_start")
+        prop_end = st.text_input("Slut", "12:00", key="prop_end")
         prop_teachers = st.text_input("Lärare (valfritt)", "", key="prop_teachers")
     prop_week = st.number_input("Vecka #", min_value=1, max_value=53, value=36, step=1, key="prop_week")
     sug_duration = st.number_input("Föreslagen längd (min)", min_value=30, max_value=300, value=90, step=15, key="sug_duration")
