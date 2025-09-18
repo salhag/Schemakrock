@@ -72,7 +72,7 @@ with st.sidebar:
 
 # ---------------------- Utforskare ----------------------
 st.markdown("---")
-st.subheader("Utforska & redigera befintligt schema")
+st.subheader("Utforska & redigera importerade scheman")
 available_semesters = fetch_semesters()
 
 col1, col2 = st.columns(2)
