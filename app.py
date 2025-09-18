@@ -31,7 +31,7 @@ ensure_teacher_column()
 # ---------------------- Sidofält ----------------------
 with st.sidebar:
     st.header("Ladda upp schemafil")
-    st.caption("Rubriker: kurskod, program, veckodag, start, slut, veckonummer, termin, (valfritt) lärare")
+    st.caption("Rubriker: kurskod, program, veckodag, start, slut, veckonummer, termin, lärare (valfritt)")
     up = st.file_uploader("CSV eller Excel", type=["csv", "xlsx", "xls"], key="file_upload")
     if st.button("Importera till databas", use_container_width=True, disabled=up is None, key="btn_import"):
         try:
@@ -311,7 +311,7 @@ with st.expander("ℹ️ Tips & anmärkningar"):
         - Ladda upp flera filer över tid för att bygga upp databas per **termin**.
         - Använd **program** som MTBG, VAKT, NGMV (semikolon för gemensamma pass).
         - Valfri kolumn **lärare** kan anges, även semikolonavgränsad vid team-teaching.
-        - Fält i Excel/CSV ska heta: **kurskod, program, veckodag, start, slut, veckonummer, termin**, (valfritt) **lärare**.
+        - Fält i Excel/CSV ska heta: **kurskod, program, veckodag, start, slut, veckonummer, termin**, **lärare** (ritt).
         - "Föreslå över veckor" accepterar intervall och listor, t.ex. `36-40,42`.
         - Pass som möts exakt i gränsen (t.ex. 10:00–12:00 och 12:00–14:00) räknas **inte** som krock.
         - Vi kan lägga till **lokaler** senare: utöka tabellen och indexera likt program/lärare.
