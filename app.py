@@ -162,7 +162,7 @@ if st.button("Visa lärarkrockar", key="btn_report_teacher") and available_semes
 
 # ---------------------- Krockkontroll & Förslag (uppdelad i två delar) ----------------------
 st.markdown("---")
-st.subheader("Kontroll av krockar och förslag på lediga tider")
+# st.subheader("Kontroll av krockar och förslag på lediga tider")
 
 col_left, col_right = st.columns(2, gap="large")
 
