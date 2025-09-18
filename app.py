@@ -90,7 +90,7 @@ if available_semesters:
         erase_by_ids(ids_to_delete)
         st.success(f"Tog bort {len(ids_to_delete)} rad(er). Ladda om tabellen ovan.")
 else:
-    st.info("Inga data ännu. Ladda upp en fil i sidofältet.")
+    st.info("Inga data ännu. Ladda upp dina schemafiler i sidofältet.")
 
 
 # ---------------------- Krockrapport – program ----------------------
