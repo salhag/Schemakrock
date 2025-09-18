@@ -160,94 +160,147 @@ if st.button("Visa lärarkrockar", key="btn_report_teacher") and available_semes
                            file_name="krockrapport_larare.csv", mime="text/csv")
 
 
-# ---------------------- Föreslaget pass ----------------------
+# ---------------------- Krockkontroll & Förslag (uppdelad i två delar) ----------------------
 st.markdown("---")
-st.subheader("Kontrollera ett föreslaget pass & få förslag")
+st.subheader("Kontroll av krockar och förslag på lediga tider")
 
-with st.form("proposal_form"):
-    c1, c2, c3 = st.columns([2,1,1])
-    with c1:
-        prop_course = st.text_input("Kurskod", "NYTT PASS", key="prop_course")
-        _prog_opts = list_program_tokens()
-        if _prog_opts:
-            prop_groups = st.multiselect("Program", options=_prog_opts, default=_prog_opts[:1], key="prop_groups")
-        else:
-            prop_groups = st.text_input("Program", "MTBG", key="prop_groups_text")
-    with c2:
-        prop_sem = st.selectbox("Termin", options=available_semesters or ["2025-HT"], key="prop_sem")
-        prop_days = st.multiselect("Veckodagar (kontroll)", options=["Mån","Tis","Ons","Tors","Fre","Lör","Sön"],
-                                   default=["Mån","Tis","Ons","Tors","Fre"], key="prop_days")
-    with c3:
-        prop_start = st.text_input("Start", "10:00", key="prop_start")
-        prop_end = st.text_input("Slut", "12:00", key="prop_end")
-        prop_teachers = st.text_input("Lärare (valfritt)", "", key="prop_teachers")
-    prop_week = st.number_input("Vecka #", min_value=1, max_value=53, value=36, step=1, key="prop_week")
-    sug_duration = st.number_input("Föreslagen längd (min)", min_value=30, max_value=300, value=90, step=15, key="sug_duration")
-    sug_weeks = st.text_input("Föreslå över veckor (t.ex. 36-40,42)", "36-40", key="sug_weeks")
-    days_allowed = st.multiselect("Tillåtna dagar (förslag)", options=["Mån","Tis","Ons","Tors","Fre","Lör","Sön"],
-                                  default=["Mån","Tis","Ons","Tors","Fre"], key="sug_days")
-    window_start = st.text_input("Dagsfönster start", "08:00", key="window_start")
-    window_end = st.text_input("Dagsfönster slut", "18:00", key="window_end")
-    submitted = st.form_submit_button("Kontrollera & föreslå", key="btn_proposal")
+col_left, col_right = st.columns(2, gap="large")
 
-if submitted:
-    try:
-        from parsing import parse_program
+# ---------- Vänster: Kontroll av krockar för ett givet pass ----------
+with col_left:
+    st.markdown("### 🔎 Kontrollera krockar för ett föreslaget pass")
 
-        # Normalisera programval
-        if isinstance(prop_groups, list):
-            gset = {str(g).strip().upper() for g in prop_groups if str(g).strip()}
-        else:
-            gset = parse_program(prop_groups)
+    with st.form("form_conflicts"):
+        c1, c2 = st.columns([2, 1])
+        with c1:
+            prop_course_c = st.text_input("Kurskod", "NYTT-PASS", key="conf_course")
+            _prog_opts = list_program_tokens()
+            if _prog_opts:
+                prop_groups_c = st.multiselect("Program", options=_prog_opts, default=_prog_opts[:1], key="conf_groups")
+            else:
+                prop_groups_c = st.text_input("Program", "MTBG", key="conf_groups_text")
+        with c2:
+            prop_sem_c = st.selectbox("Termin", options=available_semesters or ["2025-HT"], key="conf_sem")
+            prop_week_c = st.number_input("Vecka #", min_value=1, max_value=53, value=36, step=1, key="conf_week")
 
-        start_t = parse_time_str(prop_start)
-        end_t = parse_time_str(prop_end)
-        day_map_ui = {"Mån": "mån", "Tis": "tis", "Ons": "ons", "Tors": "tors", "Fre": "fre", "Lör": "lör", "Sön": "sön"}
-        tset = {s.strip().upper() for s in prop_teachers.split(";") if s.strip()}
+        c3, c4 = st.columns(2)
+        with c3:
+            prop_days_c = st.multiselect(
+                "Veckodagar (kontroll)",
+                options=["Mån", "Tis", "Ons", "Tors", "Fre", "Lör", "Sön"],
+                default=["Mån", "Tis", "Ons", "Tors", "Fre"],
+                key="conf_days",
+            )
+            prop_teachers_c = st.text_input("Lärare (valfritt, semikolon)", "", key="conf_teachers")
+        with c4:
+            prop_start_c = st.text_input("Start (HH:MM)", "10:00", key="conf_start")
+            prop_end_c   = st.text_input("Slut (HH:MM)",  "12:00", key="conf_end")
 
-        # Krockkontroll för alla valda dagar
-        all_conflicts = []
-        for _d in prop_days:
-            d_idx = parse_day(day_map_ui[_d])
-            all_conflicts.extend(
-                check_conflict_in_db(
-                    semester=prop_sem,
-                    groups=gset,
-                    day=d_idx,
-                    start=start_t,
-                    end=end_t,
-                    week=int(prop_week),
-                    teachers=tset if tset else None,
+        submitted_conf = st.form_submit_button("Kontrollera krockar", use_container_width=True)
+
+    if submitted_conf:
+        try:
+            from parsing import parse_program
+            # Normalisera program
+            if isinstance(prop_groups_c, list):
+                gset_c = {str(g).strip().upper() for g in prop_groups_c if str(g).strip()}
+            else:
+                gset_c = parse_program(prop_groups_c)
+
+            start_t_c = parse_time_str(prop_start_c)
+            end_t_c   = parse_time_str(prop_end_c)
+            day_map_ui = {"Mån":"mån","Tis":"tis","Ons":"ons","Tors":"tors","Fre":"fre","Lör":"lör","Sön":"sön"}
+            tset_c = {s.strip().upper() for s in prop_teachers_c.split(";") if s.strip()}
+
+            # Kolla alla valda dagar
+            all_conflicts = []
+            for _d in prop_days_c:
+                d_idx = parse_day(day_map_ui[_d])
+                all_conflicts.extend(
+                    check_conflict_in_db(
+                        semester=prop_sem_c,
+                        groups=gset_c,
+                        day=d_idx,
+                        start=start_t_c,
+                        end=end_t_c,
+                        week=int(prop_week_c),
+                        teachers=tset_c if tset_c else None,
+                    )
                 )
+
+            if all_conflicts:
+                st.error("❌ Krockar hittades")
+                st.dataframe(pd.DataFrame(all_conflicts, columns=[
+                    "kurskod", "program", "lärare", "veckonummer", "veckodag", "start", "slut"
+                ]), use_container_width=True)
+            else:
+                st.success("✅ Ingen krock för det föreslagna passet.")
+        except Exception as e:
+            st.exception(e)
+
+
+# ---------- Höger: Förslag på lediga tider ----------
+with col_right:
+    st.markdown("### 💡 Förslag på lediga tider (krockfritt för valda program)")
+
+    with st.form("form_suggestions"):
+        s1, s2 = st.columns([2, 1])
+        with s1:
+            # Återanvänd programlista
+            _prog_opts_s = list_program_tokens()
+            if _prog_opts_s:
+                prop_groups_s = st.multiselect("Program (förslag)", options=_prog_opts_s,
+                                               default=_prog_opts_s[:1], key="sug_groups")
+            else:
+                prop_groups_s = st.text_input("Program (förslag)", "MTBG", key="sug_groups_text")
+        with s2:
+            prop_sem_s = st.selectbox("Termin (förslag)", options=available_semesters or ["2025-HT"], key="sug_sem")
+
+        s3, s4 = st.columns(2)
+        with s3:
+            sug_duration_s = st.number_input("Längd (min)", min_value=30, max_value=300, value=90, step=15, key="sug_duration2")
+            sug_weeks_s = st.text_input("Veckor (t.ex. 36-40,42)", "36-40", key="sug_weeks2")
+        with s4:
+            days_allowed_s = st.multiselect("Tillåtna dagar",
+                                            options=["Mån","Tis","Ons","Tors","Fre","Lör","Sön"],
+                                            default=["Mån","Tis","Ons","Tors","Fre"], key="sug_days2")
+            window_start_s = st.text_input("Dagsfönster start", "08:00", key="sug_win_start")
+            window_end_s   = st.text_input("Dagsfönster slut",  "18:00", key="sug_win_end")
+
+        submitted_sug = st.form_submit_button("Visa förslag", use_container_width=True)
+
+    if submitted_sug:
+        try:
+            from parsing import parse_program
+            # Normalisera program
+            if isinstance(prop_groups_s, list):
+                gset_s = {str(g).strip().upper() for g in prop_groups_s if str(g).strip()}
+            else:
+                gset_s = parse_program(prop_groups_s)
+
+            # Ladda schema → bygg Schedule
+            rows_s = fetch_events_for_semester(prop_sem_s)
+            sched = Schedule(events_from_db_rows(rows_s))
+
+            day_map_ui = {"Mån":0,"Tis":1,"Ons":2,"Tors":3,"Fre":4,"Lör":5,"Sön":6}
+            free = sched.find_free_slots(
+                groups=gset_s,
+                duration_min=int(sug_duration_s),
+                weeks=parse_weeks(sug_weeks_s),
+                days_allowed={day_map_ui[d] for d in days_allowed_s},
+                day_window=(parse_time_str(window_start_s), parse_time_str(window_end_s)),
+                granularity_min=30,
             )
+            if free:
+                out = pd.DataFrame(
+                    [{"vecka": w, "dag": INT_TO_DAY[d], "start": time_to_str(s), "slut": time_to_str(e)} for (w, d, s, e) in free]
+                )
+                st.dataframe(out, use_container_width=True)
+            else:
+                st.info("Inga lediga luckor hittades för valda inställningar.")
+        except Exception as e:
+            st.exception(e)
 
-        if all_conflicts:
-            st.error("❌ Krockar hittades")
-            st.dataframe(pd.DataFrame(all_conflicts), use_container_width=True)
-        else:
-            st.success("✅ Ingen krock.")
-
-        # Förslag på lediga tider (program-baserat)
-        rows = fetch_events_for_semester(prop_sem)
-        sched = Schedule(events_from_db_rows(rows))
-        free = sched.find_free_slots(
-            groups=gset,
-            duration_min=int(sug_duration),
-            weeks=parse_weeks(sug_weeks),
-            days_allowed={parse_day(day_map_ui[d]) for d in days_allowed},
-            day_window=(parse_time_str(window_start), parse_time_str(window_end)),
-            granularity_min=30,
-        )
-        if free:
-            out = pd.DataFrame(
-                [{"vecka": w, "dag": INT_TO_DAY[d], "start": time_to_str(s), "slut": time_to_str(e)} for (w, d, s, e) in free]
-            )
-            st.dataframe(out, use_container_width=True)
-        else:
-            st.info("Inga lediga luckor hittades.")
-
-    except Exception as e:
-        st.exception(e)
 
 
 # ---------------------- Hjälp ----------------------
