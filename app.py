@@ -104,7 +104,7 @@ with colk2:
     rep_prog_text = st.text_input("Filtrera på program (semikolon, tomt = alla)", "", key="rep_prog_text")
 with colk3:
     rep_days = st.multiselect("Veckodagar (program)", options=["Mån","Tis","Ons","Tors","Fre","Lör","Sön"],
-                              default=["Mån","Tis","Ons","Tors","Fre","Lör","Sön"], key="rep_days")
+                              default=["Mån","Tis","Ons","Tors","Fre"], key="rep_days")
 with colk4:
     rep_teacher_text = st.text_input("Lärare (semikolon, tomt = alla)", "", key="rep_teacher_text")
 
@@ -141,7 +141,7 @@ with colt1:
     t_sem = st.selectbox("Termin (lärarrapport)", options=available_semesters or ["(inga data)"], key="teacher_sem")
 with colt2:
     t_days = st.multiselect("Veckodagar (lärare)", options=["Mån","Tis","Ons","Tors","Fre","Lör","Sön"],
-                            default=["Mån","Tis","Ons","Tors","Fre","Lör","Sön"], key="teacher_days")
+                            default=["Mån","Tis","Ons","Tors","Fre"], key="teacher_days")
 with colt3:
     t_teachers = st.text_input("Lärare (semikolon, tomt = alla)", "", key="teacher_text")
 
