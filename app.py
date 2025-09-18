@@ -173,7 +173,7 @@ with col_left:
     with st.form("form_conflicts"):
         c1, c2 = st.columns([2, 1])
         with c1:
-            prop_course_c = st.text_input("Kurskod", "NYTT-PASS", key="conf_course")
+            prop_course_c = st.text_input("Kurskod", "NYTT PASS", key="conf_course")
             _prog_opts = list_program_tokens()
             if _prog_opts:
                 prop_groups_c = st.multiselect("Program", options=_prog_opts, default=_prog_opts[:1], key="conf_groups")
