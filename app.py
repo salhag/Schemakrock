@@ -16,10 +16,6 @@ from db import (
 )
 from models import events_from_db_rows, Schedule
 from conflicts import compute_db_collisions, compute_teacher_collisions, check_conflict_in_db
-
-
-# ---------------------- Streamlit config ----------------------
-st.set_page_config(page_title="Schemaläggningshjälp", page_icon="📅", layout="wide")
 st.markdown(
     """
     <style>
@@ -42,6 +38,10 @@ st.markdown(
     unsafe_allow_html=True
 )
 
+
+
+# ---------------------- Streamlit config ----------------------
+st.set_page_config(page_title="Schemaläggningshjälp", page_icon="📅", layout="wide")
 st.title("📅 Krockfritt")
 st.subheader("Ett verktyg för terminsplanering med kontroll av schemakrockar och förslag på lediga tider")
 st.markdown("av _Salar Haghighatafshar_, universitetslektor vid Högskolan Kristianstad")
